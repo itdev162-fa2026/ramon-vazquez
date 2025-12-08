@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { searchProducts } from "../services/api";
+import { getProducts, searchProducts } from "../services/api";
 import ProductCard from './ProductCard';
 import './ProductList.css';
 
@@ -7,15 +7,24 @@ function ProductList() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [searchInput, setSearchInput] = useState(""); // What user types
-  const [activeSearch, setActiveSearch] = useState(""); // What's actually searched
+  const [searchInput, setSearchInput] = useState(""); 
+  const [activeSearch, setActiveSearch] = useState(""); 
 
   useEffect(() => {
     const fetchProducts = async () => {
       try {
         setLoading(true);
-        const data = await getProducts();
-        setProducts(data);
+
+        // If there's an active search term, run search
+        if (activeSearch.trim() !== "") {
+          const data = await searchProducts(activeSearch);
+          setProducts(data);
+        } else {
+          // Otherwise load all products
+          const data = await getProducts();
+          setProducts(data);
+        }
+
         setError(null);
       } catch (err) {
         setError('Failed to load products. Please try again later.');
@@ -27,6 +36,11 @@ function ProductList() {
 
     fetchProducts();
   }, [activeSearch]);
+
+  // 🔥 FIXED FUNCTION (was missing)
+  const handleSearch = () => {
+    setActiveSearch(searchInput);
+  };
 
   const handleKeyDown = (e) => {
     if (e.key === "Enter") {
@@ -61,6 +75,7 @@ function ProductList() {
         <button onClick={handleSearch} className="search-button">
           Search
         </button>
+
         {searchInput && (
           <button onClick={handleClearSearch} className="clear-search-button">
             Clear

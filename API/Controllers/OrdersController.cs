@@ -2,6 +2,8 @@ using Domain;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.ComponentModel.DataAnnotations;
+using Stripe;
+using Stripe.Checkout;
 using Persistence;
 
 namespace API.Controllers;
@@ -17,7 +19,6 @@ public class OrdersController : ControllerBase
         _context = context;
     }
 
-    // GET: api/orders/5
     [HttpGet("{id}")]
     public async Task<ActionResult<Order>> GetOrder(int id)
     {
@@ -33,7 +34,46 @@ public class OrdersController : ControllerBase
         return Ok(order);
     }
 
-    // POST: api/orders
+    [HttpGet("session/{sessionId}")]
+    public async Task<ActionResult<Order>> GetOrderBySessionId(string sessionId)
+    {
+        var sessionService = new SessionService();
+        Session stripeSession;
+
+        try
+        {
+            stripeSession = await sessionService.GetAsync(sessionId);
+        }
+        catch (Stripe.StripeException ex)
+        {
+            return BadRequest($"Invalid session ID: {ex.Message}");
+        }
+
+        var order = await _context.Orders
+            .Include(o => o.OrderItems)
+            .FirstOrDefaultAsync(o => o.StripeSessionId == sessionId);
+
+        if (order == null)
+        {
+            return NotFound("Order not found");
+        }
+
+        if (stripeSession.PaymentStatus == "paid" && order.Status != OrderStatus.Completed)
+        {
+            order.Status = OrderStatus.Completed;
+            order.CompletedDate = DateTime.Now;
+            order.StripePaymentIntentId = stripeSession.PaymentIntentId;
+            await _context.SaveChangesAsync();
+        }
+        else if (stripeSession.PaymentStatus == "unpaid" && order.Status == OrderStatus.Pending)
+        {
+            order.Status = OrderStatus.Failed;
+            await _context.SaveChangesAsync();
+        }
+
+        return Ok(order);
+    }
+
     [HttpPost]
     public async Task<ActionResult<Order>> CreateOrder(CreateOrderRequest request)
     {
@@ -47,29 +87,25 @@ public class OrdersController : ControllerBase
             return BadRequest("Cart is empty");
         }
 
-        // Create order
         var order = new Order
         {
             CustomerEmail = request.CustomerEmail,
             Status = OrderStatus.Pending,
-            CreatedDate = DateTime.Now
+            CreatedDate = DateTime.Now,
+            StripeSessionId = request.StripeSessionId // FIXED: Now capturing the ID
         };
 
-        // Process each cart item
         decimal totalAmount = 0;
         foreach (var item in request.Items)
         {
-            // Verify product exists
             var product = await _context.Products.FindAsync(item.ProductId);
             if (product == null)
             {
                 return BadRequest($"Product with ID {item.ProductId} not found");
             }
 
-            // SECURITY: Always use current price from database, never trust client
             var priceToUse = product.IsOnSale ? product.SalePrice!.Value : product.Price;
 
-            // Create order item with point-in-time data
             var orderItem = new OrderItem
             {
                 ProductId = product.Id,
@@ -83,12 +119,6 @@ public class OrdersController : ControllerBase
         }
 
         order.TotalAmount = totalAmount;
-
-        // For now, mark as completed immediately (Activity 11 will use Stripe)
-        order.Status = OrderStatus.Completed;
-        order.CompletedDate = DateTime.Now;
-
-        // Save to database
         _context.Orders.Add(order);
         await _context.SaveChangesAsync();
 
@@ -96,12 +126,13 @@ public class OrdersController : ControllerBase
     }
 }
 
-// Request model for creating orders
 public class CreateOrderRequest
 {
     [Required]
     [EmailAddress]
     public string CustomerEmail { get; set; } = string.Empty;
+
+    public string? StripeSessionId { get; set; } // FIXED: Added to model
 
     [Required]
     public List<CartItemRequest> Items { get; set; } = new List<CartItemRequest>();

@@ -3,27 +3,25 @@ import { useState, useEffect } from "react";
 import ProductList from './components/ProductList';
 import Checkout from "./components/Checkout/Checkout";
 import OrderSuccess from "./components/Checkout/OrderSuccess";
+import CheckoutCancelled from "./components/Checkout/CheckoutCancelled";
 import ProductDetail from './components/ProductDetail';
 import CartButton from "./components/Cart/CartButton";
 import Cart from "./components/Cart/Cart";
 import './App.css';
 
 function App() {
-  // Cart state
-  const [cartItems, setCartItems] = useState([]);
-  const [showCart, setShowCart] = useState(false);
-
-  // Load cart from localStorage on mount
-  useEffect(() => {
+  // Cart state initialized with a lazy initializer to prevent sync issues
+  const [cartItems, setCartItems] = useState(() => {
     try {
       const savedCart = localStorage.getItem("cart");
-      if (savedCart) {
-        setCartItems(JSON.parse(savedCart));
-      }
+      return savedCart ? JSON.parse(savedCart) : [];
     } catch (error) {
       console.error("Error loading cart from localStorage:", error);
+      return [];
     }
-  }, []);
+  });
+  
+  const [showCart, setShowCart] = useState(false);
 
   // Save cart to localStorage whenever it changes
   useEffect(() => {
@@ -42,44 +40,41 @@ function App() {
       );
 
       if (existingItem) {
-        // Update quantity of existing item
+        // FIXED TYPO: changed quamtity to quantity
         return prevItems.map((item) =>
           item.product.id === product.id
-            ? { ...item, quamtity: item.quantity + quantity }
+            ? { ...item, quantity: item.quantity + quantity }
             : item      
         );
       } else {
-        // Add new item
         return [...prevItems, { product, quantity }];
       }
     });
   };
 
-  // Remove item from cart
   const removeFromCart = (productId) => {
     setCartItems((prevItems) =>
       prevItems.filter((item) => item.product.id !== productId)
     );
   };
 
-  // Update quantity of item in cart
-  const updateQuantity = (productId, newQuamtity) => {
-    if (newQuantity < 1) return; // Don't allow quantity less than 1
+  // FIXED TYPO: parameter renamed to newQuantity
+  const updateQuantity = (productId, newQuantity) => {
+    if (newQuantity < 1) return; 
 
     setCartItems((prevItems) =>
       prevItems.map((item) => 
-        item.product.id === productId)
+        item.product.id === productId
           ? { ...item, quantity: newQuantity }
           : item
       )
+    );
   };
 
-  // Clear entire cart
   const clearCart = () => {
     setCartItems([]);
   };
 
-  // Calculate cart total (handles sale prices)
   const getCartTotal = () => {
     return cartItems.reduce((total, item) => {
       const price = item.product.isOnSale
@@ -89,62 +84,65 @@ function App() {
     }, 0);
   };
 
-  // Get total number of items in cart
   const getCartItemCount = () => {
     return cartItems.reduce((count, item) => count + item.quantity, 0);
   };
 
   return (
     <Router>
-    <div className="app">
-      <header className="app-header">
-        <div className="header-content">
-          <div>
-            <h1>Blogbox Store</h1>
-            <p>Your E-Commerce Solution</p>
+      <div className="app">
+        <header className="app-header">
+          <div className="header-content">
+            <div>
+              <h1>Blogbox Store</h1>
+              <p>Your E-Commerce Solution</p>
+            </div>
+            <CartButton
+              itemCount={getCartItemCount()}
+              total={getCartTotal()}
+              onClick={() => setShowCart(true)}
+            />
           </div>
-          <CartButton
-            itemCount={getCartItemCount()}
+        </header>
+
+        <main className="app-main">
+          <Routes>
+            <Route path="/" element={<ProductList />} />
+            <Route path="/products/:id" element={<ProductDetail addToCart={addToCart} />} />
+            <Route 
+              path="/checkout" 
+              element={
+                <Checkout 
+                  cartItems={cartItems} 
+                  cartTotal={getCartTotal()} 
+                  clearCart={clearCart} 
+                />
+              } 
+            />
+            {/* Pass clearCart to OrderSuccess */}
+            <Route path="/order/success" element={<OrderSuccess clearCart={clearCart} />} />
+            
+            {/* Added missing route */}
+            <Route path="/checkout/cancelled" element={<CheckoutCancelled />} />
+          </Routes>
+        </main>
+
+        <footer className="app-footer">
+          <p>&copy; 2024 Blogbox Store. Built with React & ASP.NET Core</p>
+        </footer>
+
+        {showCart && (
+          <Cart
+            items={cartItems}
             total={getCartTotal()}
-            onClick={() => setShowCart(true)}
+            onUpdateQuantity={updateQuantity}
+            onRemove={removeFromCart}
+            onClear={clearCart}
+            onClose={() => setShowCart(false)}
           />
-        </div>
-      </header>
-
-      <main className="app-main">
-        <Routes>
-          <Route path="/" element={<ProductList />} 
-          />
-          <Route path="/products/:id" element={<ProductDetail addToCart={addToCart} />}
-          />
-          <Route path="/" element={<ProductList />} 
-          />
-          <Route path="/products/:id" element={<ProductDetail addToCart={addToCart} />}
-          />
-          <Route path="/checkout" element={ <Checkout cartItems={cartItems} cartTotal={getCartTotal()} clearCart={clearCart}
-          />
-        }
-      />
-  <Route path="/order/success" element={<OrderSuccess />} />
-        </Routes>
-      </main>
-
-      <footer className="app-footer">
-        <p>&copy; 2024 Blogbox Store. Built with React & ASP.NET Core</p>
-      </footer>
-
-      {showCart && (
-        <Cart
-          items={cartItems}
-          total={getCartTotal()}
-          onUpdateQuantity={updateQuantity}
-          onRemove={removeFromCart}
-          onClear={clearCart}
-          onClose={() => setShowCart(false)}
-        />
-      )}
-    </div>
-  </Router>
+        )}
+      </div>
+    </Router>
   );
 }
 

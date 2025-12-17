@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { getOrderById } from "../../services/api";
+import { getOrderBySessionId } from "../../services/api";
 import "./OrderSuccess.css";
 
-function OrderSuccess() {
+function OrderSuccess({ clearCart }) { // Destructure clearCart prop
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [order, setOrder] = useState(null);
@@ -11,10 +11,10 @@ function OrderSuccess() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const orderId = searchParams.get("orderId");
+    const sessionId = searchParams.get("session_id");
 
-    if (!orderId) {
-      setError("No order ID found");
+    if (!sessionId) {
+      setError("No session ID found");
       setLoading(false);
       return;
     }
@@ -22,11 +22,16 @@ function OrderSuccess() {
     const fetchOrder = async () => {
       try {
         setLoading(true);
-        const orderData = await getOrderById(orderId);
+        const orderData = await getOrderBySessionId(sessionId);
         setOrder(orderData);
+        
+        // Clear cart from both storage and state
+        localStorage.removeItem("cart");
+        if (clearCart) clearCart(); 
+        
         setError(null);
       } catch (err) {
-        setError("Failed to load order details. Please contact support.");
+        setError("We are still processing your order details. Please refresh in a moment.");
         console.error(err);
       } finally {
         setLoading(false);
@@ -34,7 +39,7 @@ function OrderSuccess() {
     };
 
     fetchOrder();
-  }, [searchParams]);
+  }, [searchParams, clearCart]);
 
   if (loading) {
     return (
@@ -48,8 +53,11 @@ function OrderSuccess() {
     return (
       <div className="order-success-container">
         <div className="error-state">
-          <h2>⚠️ Unable to Load Order</h2>
+          <h2>⚠️ Processing Order</h2>
           <p>{error || "Order not found"}</p>
+          <button onClick={() => window.location.reload()} className="home-button" style={{marginBottom: '10px'}}>
+            Retry
+          </button>
           <button onClick={() => navigate("/")} className="home-button">
             Return to Home
           </button>
@@ -60,11 +68,11 @@ function OrderSuccess() {
 
   const getStatusBadge = (status) => {
     switch (status) {
-      case 1: // Completed
+      case 1: 
         return <span className="status-badge status-completed">Completed</span>;
-      case 0: // Pending
+      case 0: 
         return <span className="status-badge status-pending">Pending</span>;
-      case 2: // Failed
+      case 2: 
         return <span className="status-badge status-failed">Failed</span>;
       default:
         return <span className="status-badge">Unknown</span>;
@@ -76,7 +84,7 @@ function OrderSuccess() {
       <div className="success-content">
         <div className="success-header">
           <div className="success-icon">✓</div>
-          <h1>Order Placed Successfully!</h1>
+          <h1>Payment Successful!</h1>
           <p className="success-message">
             Thank you for your order. A confirmation email has been sent to{" "}
             <strong>{order.customerEmail}</strong>
@@ -131,11 +139,15 @@ function OrderSuccess() {
           </div>
         </div>
 
-        <div className="next-steps">
-          <p className="next-activity-note">
-            💡 Note: In Activities 11-12, we'll add Stripe payment processing so
-            orders require actual payment before completion.
+        <div className="payment-info">
+          <p className="stripe-notice">
+            🔒 Payment securely processed by Stripe
           </p>
+          {order.stripePaymentIntentId && (
+            <p className="payment-id">
+              Payment ID: {order.stripePaymentIntentId}
+            </p>
+          )}
         </div>
 
         <button
